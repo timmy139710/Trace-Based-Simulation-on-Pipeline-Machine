@@ -124,10 +124,10 @@ void pipe_cycle(Pipeline *p)
     pipe_cycle_ID(p);
     pipe_cycle_IF(p);
     
-    if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100)
-    {
-      pipe_print_state(p);
-    }
+    // if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100)
+    // {
+    //   pipe_print_state(p);
+    // }
 
 }
 /**********************************************************************
@@ -196,9 +196,8 @@ void pipe_cycle_EX(Pipeline *p){
 void pipe_cycle_ID(Pipeline *p){
   
   int ii;
-  bool early_cycle_stall = false;
-
-  insertion_sort(p);
+  bool early_stall = false;
+  insertion_sort(p); // sort superscalar pipeline for in-order operations
 
   for(ii=0; ii<PIPE_WIDTH; ii++){
     p->pipe_latch[ID_LATCH][ii].stall = false;
@@ -207,10 +206,9 @@ void pipe_cycle_ID(Pipeline *p){
     //   p->pipe_latch[ID_LATCH][ii].stall = true;
     // }
 
-    if(early_cycle_stall){
+    if(early_stall && ii > 0){
       p->pipe_latch[ID_LATCH][ii].stall = true;
     }
-
 
     // Check dependency in EX stage
     if(ENABLE_EXE_FWD){
@@ -226,14 +224,12 @@ void pipe_cycle_ID(Pipeline *p){
              p->pipe_latch[EX_LATCH][cur].tr_entry.op_type == OP_LD)
           {
             p->pipe_latch[ID_LATCH][ii].stall = true;
-                        if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100) printf("x");
           }
           if(p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && \
              p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed == p->pipe_latch[EX_LATCH][cur].tr_entry.dest && \
              p->pipe_latch[EX_LATCH][cur].tr_entry.op_type == OP_LD)
           {
             p->pipe_latch[ID_LATCH][ii].stall = true;
-                              if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100) printf("y");
           }
         }
 
@@ -243,7 +239,6 @@ void pipe_cycle_ID(Pipeline *p){
             if(p->pipe_latch[EX_LATCH][cur].tr_entry.op_type == OP_LD)
             {
               p->pipe_latch[ID_LATCH][ii].stall = true;  
-              if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100) printf("z");
             }
             else{
               p->pipe_latch[ID_LATCH][ii].stall = false;
@@ -263,13 +258,11 @@ void pipe_cycle_ID(Pipeline *p){
             (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[EX_LATCH][cur].tr_entry.dest) )
           {
             p->pipe_latch[ID_LATCH][ii].stall = true;
-                        if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100) printf("d");
           }
           if(p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && \
             (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[EX_LATCH][cur].tr_entry.dest) )
           {
             p->pipe_latch[ID_LATCH][ii].stall = true;
-                        if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100) printf("e");
           }
         }
 
@@ -279,7 +272,6 @@ void pipe_cycle_ID(Pipeline *p){
           if(p->pipe_latch[IF_LATCH][ii].tr_entry.cc_read)
           {
             p->pipe_latch[ID_LATCH][ii].stall = true;
-                        if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100) printf("f");
           }
         }
       }
@@ -287,6 +279,7 @@ void pipe_cycle_ID(Pipeline *p){
 
     if(ENABLE_MEM_FWD){
       // todo
+      // No need to stall for LD because register write and read could complete in 1 cycle
     }
     else // Does not enable memory forwarding in MEM stage 
     { 
@@ -300,14 +293,12 @@ void pipe_cycle_ID(Pipeline *p){
             (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[MA_LATCH][cur].tr_entry.dest) )
           {
             p->pipe_latch[ID_LATCH][ii].stall = true;
-            if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100) printf("a");
           }
           if(p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && 
           (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[MA_LATCH][cur].tr_entry.dest) )
           {
             p->pipe_latch[ID_LATCH][ii].stall = true;
-                        if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100) printf("b");
-          }        
+          }
         }
         // check cc_read and cc_write dependency, only branch will have cc_read
         if(p->pipe_latch[MA_LATCH][cur].valid && p->pipe_latch[MA_LATCH][cur].tr_entry.cc_write)
@@ -315,47 +306,41 @@ void pipe_cycle_ID(Pipeline *p){
           if(p->pipe_latch[IF_LATCH][ii].tr_entry.cc_read)
           {
             p->pipe_latch[ID_LATCH][ii].stall = true;
-                        if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100) printf("c");
           }
         }
       }
     } // end ENABLE_MEM_FWD statement
 
-
     // Data dependency between ID latchs
     // In super-scalar machine, there might be hazards between instructions in ID stage
-    // *pipeline with smaller ii is older due to the fetch order in IF stage
-    for(int cur = 0; cur < ii; cur++)
+    // pipeline with smaller ii index is older due to the fetch order in IF stage
+    for(int old = 0; old < ii; old++)
     {
-      if(p->pipe_latch[ID_LATCH][cur].valid && p->pipe_latch[ID_LATCH][cur].tr_entry.dest_needed)
+      if(p->pipe_latch[ID_LATCH][old].valid && p->pipe_latch[ID_LATCH][old].tr_entry.dest_needed)
       {
         if(p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed && \
-          (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[ID_LATCH][cur].tr_entry.dest) )
+          (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[ID_LATCH][old].tr_entry.dest) )
         {
           // stall newer pipe
           p->pipe_latch[ID_LATCH][ii].stall = true;
-                      if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100) printf("g");
         }
         if(p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && \
-          (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[ID_LATCH][cur].tr_entry.dest) )
+          (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[ID_LATCH][old].tr_entry.dest) )
         {
           p->pipe_latch[ID_LATCH][ii].stall = true;
-                      if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100) printf("h");
         }
       }
 
       // If older instructions have cc_write
-      if(p->pipe_latch[ID_LATCH][cur].valid && p->pipe_latch[ID_LATCH][cur].tr_entry.cc_write)
+      if(p->pipe_latch[ID_LATCH][old].valid && p->pipe_latch[ID_LATCH][old].tr_entry.cc_write)
       {
         // If newer instruction has cc_read
         if(p->pipe_latch[IF_LATCH][ii].tr_entry.cc_read)
         {
           p->pipe_latch[ID_LATCH][ii].stall = true;
-          if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100) printf("i");
         }
       }
     }
-
 
     // If  stall, no longer valid to receive new instructions 
     if(p->pipe_latch[ID_LATCH][ii].stall){
@@ -366,7 +351,8 @@ void pipe_cycle_ID(Pipeline *p){
       p->pipe_latch[ID_LATCH][ii] = p->pipe_latch[IF_LATCH][ii];
     }
     
-    early_cycle_stall = early_cycle_stall || p->pipe_latch[ID_LATCH][ii].stall;
+    early_stall = early_stall || p->pipe_latch[ID_LATCH][ii].stall;
+
   } // end pipe_width for loop
 }
 
@@ -393,7 +379,6 @@ void pipe_cycle_IF(Pipeline *p){
   
 }
 
-
 //--------------------------------------------------------------------//
 
 void pipe_check_bpred(Pipeline *p, Pipeline_Latch *fetch_op){
@@ -401,7 +386,6 @@ void pipe_check_bpred(Pipeline *p, Pipeline_Latch *fetch_op){
   // update the predictor instantly
   // stall fetch using the flag p->fetch_cbr_stall
 }
-
 
 //--------------------------------------------------------------------//
 

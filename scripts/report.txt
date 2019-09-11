@@ -20,9 +20,9 @@
 ../results/B2.mcf.res:LAB2_CPI                	 :      0.655
 ../results/B1.bzip2.res:LAB2_MISPRED_RATE       	 :      0.001
 ../results/B1.gcc.res:LAB2_MISPRED_RATE       	 :      0.002
-../results/B1.libq.res:LAB2_MISPRED_RATE       	 :      0.001
-../results/B1.mcf.res:LAB2_MISPRED_RATE       	 :      0.004
-../results/B2.bzip2.res:LAB2_MISPRED_RATE       	 :      0.000
-../results/B2.gcc.res:LAB2_MISPRED_RATE       	 :      0.001
-../results/B2.libq.res:LAB2_MISPRED_RATE       	 :      0.002
+../results/B1.libq.res:LAB2_MISPRED_RATE       	 :        nan
+../results/B1.mcf.res:LAB2_MISPRED_RATE       	 :      0.000
+../results/B2.bzip2.res:LAB2_MISPRED_RATE       	 :        nan
+../results/B2.gcc.res:LAB2_MISPRED_RATE       	 :        inf
+../results/B2.libq.res:LAB2_MISPRED_RATE       	 :        nan
 ../results/B2.mcf.res:LAB2_MISPRED_RATE       	 :      0.001
