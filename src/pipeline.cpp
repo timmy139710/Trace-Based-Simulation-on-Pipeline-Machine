@@ -140,13 +140,14 @@ void insertion_sort(Pipeline *p){
   for(int i = 1; i < PIPE_WIDTH; ++i){
     Pipeline_Latch temp = p->pipe_latch[IF_LATCH][i];
     j = i - 1;
-    while(j >= 0 && 
-      (
-        (p->pipe_latch[IF_LATCH][j].op_id > temp.op_id && p->pipe_latch[IF_LATCH][j].valid) \
-        ||
-        (!p->pipe_latch[IF_LATCH][j].valid && temp.valid)
+    while
+      ( j >= 0 
+        && 
+        ( (p->pipe_latch[IF_LATCH][j].op_id > temp.op_id && p->pipe_latch[IF_LATCH][j].valid) \
+          ||
+          (!p->pipe_latch[IF_LATCH][j].valid && temp.valid)
+        )
       )
-    )
     {
       p->pipe_latch[IF_LATCH][j+1] = p->pipe_latch[IF_LATCH][j];
       --j;
@@ -196,20 +197,20 @@ void pipe_cycle_EX(Pipeline *p){
 void pipe_cycle_ID(Pipeline *p){
   
   int ii;
-  bool early_stall = false;
   insertion_sort(p); // sort superscalar pipeline for in-order operations
 
   for(ii=0; ii<PIPE_WIDTH; ii++){
     p->pipe_latch[ID_LATCH][ii].stall = false;
 
-    // if(ii > 0 && p->pipe_latch[ID_LATCH][0].stall){
-    //   p->pipe_latch[ID_LATCH][ii].stall = true;
-    // }
-
-    if(early_stall && ii > 0){
-      p->pipe_latch[ID_LATCH][ii].stall = true;
+    if(ii > 0){
+      int j = ii - 1;
+      while(j >= 0){
+        if(p->pipe_latch[ID_LATCH][j].stall){
+          p->pipe_latch[ID_LATCH][ii].stall = true;
+        }
+        --j;
+      }
     }
-
     // Check dependency in EX stage
     if(ENABLE_EXE_FWD){
       for(int cur = 0; cur < PIPE_WIDTH; cur++)
@@ -219,28 +220,30 @@ void pipe_cycle_ID(Pipeline *p){
         {
           // If src1 or src2 match dest and src op is load instruction, stall the instruction
           // Otherwise, forward the data so there is no stall 
-          if(p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed && \
+          if(
+             (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed && \
              p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[EX_LATCH][cur].tr_entry.dest && \
-             p->pipe_latch[EX_LATCH][cur].tr_entry.op_type == OP_LD)
-          {
-            p->pipe_latch[ID_LATCH][ii].stall = true;
-          }
-          if(p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && \
+             p->pipe_latch[EX_LATCH][cur].tr_entry.op_type == OP_LD) 
+             || 
+             (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && \
              p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed == p->pipe_latch[EX_LATCH][cur].tr_entry.dest && \
              p->pipe_latch[EX_LATCH][cur].tr_entry.op_type == OP_LD)
+            )
           {
             p->pipe_latch[ID_LATCH][ii].stall = true;
           }
         }
 
-        // check cc_read/cc_write
-        if(p->pipe_latch[IF_LATCH][ii].tr_entry.cc_read){
+        // check cc_read and cc_write
+        if(p->pipe_latch[IF_LATCH][ii].tr_entry.cc_read)
+        {
           if(p->pipe_latch[EX_LATCH][cur].valid && p->pipe_latch[EX_LATCH][cur].tr_entry.cc_write){
             if(p->pipe_latch[EX_LATCH][cur].tr_entry.op_type == OP_LD)
             {
               p->pipe_latch[ID_LATCH][ii].stall = true;  
             }
-            else{
+            else
+            {
               p->pipe_latch[ID_LATCH][ii].stall = false;
             }
           }
@@ -254,13 +257,13 @@ void pipe_cycle_ID(Pipeline *p){
         // RAW dependency
         if(p->pipe_latch[EX_LATCH][cur].valid && p->pipe_latch[EX_LATCH][cur].tr_entry.dest_needed)
         { 
-          if(p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed && \
-            (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[EX_LATCH][cur].tr_entry.dest) )
-          {
-            p->pipe_latch[ID_LATCH][ii].stall = true;
-          }
-          if(p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && \
-            (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[EX_LATCH][cur].tr_entry.dest) )
+          if(
+              (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed && \
+              (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[EX_LATCH][cur].tr_entry.dest) )
+              ||
+              (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && \
+              (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[EX_LATCH][cur].tr_entry.dest) )
+            )
           {
             p->pipe_latch[ID_LATCH][ii].stall = true;
           }
@@ -289,13 +292,13 @@ void pipe_cycle_ID(Pipeline *p){
         // For in-order pipeline, consider only RAW hazard
         if(p->pipe_latch[MA_LATCH][cur].valid && p->pipe_latch[MA_LATCH][cur].tr_entry.dest_needed)
         {
-          if(p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed &&
-            (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[MA_LATCH][cur].tr_entry.dest) )
-          {
-            p->pipe_latch[ID_LATCH][ii].stall = true;
-          }
-          if(p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && 
-          (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[MA_LATCH][cur].tr_entry.dest) )
+          if(
+              (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed &&
+              (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[MA_LATCH][cur].tr_entry.dest) )
+              ||
+              (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && 
+              (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[MA_LATCH][cur].tr_entry.dest) )
+            )
           {
             p->pipe_latch[ID_LATCH][ii].stall = true;
           }
@@ -318,15 +321,15 @@ void pipe_cycle_ID(Pipeline *p){
     {
       if(p->pipe_latch[ID_LATCH][old].valid && p->pipe_latch[ID_LATCH][old].tr_entry.dest_needed)
       {
-        if(p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed && \
-          (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[ID_LATCH][old].tr_entry.dest) )
+        if(
+            (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed && \
+            (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[ID_LATCH][old].tr_entry.dest) )
+            ||
+            (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && \
+            (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[ID_LATCH][old].tr_entry.dest) )
+          )
         {
           // stall newer pipe
-          p->pipe_latch[ID_LATCH][ii].stall = true;
-        }
-        if(p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && \
-          (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[ID_LATCH][old].tr_entry.dest) )
-        {
           p->pipe_latch[ID_LATCH][ii].stall = true;
         }
       }
@@ -351,8 +354,6 @@ void pipe_cycle_ID(Pipeline *p){
       p->pipe_latch[ID_LATCH][ii] = p->pipe_latch[IF_LATCH][ii];
     }
     
-    early_stall = early_stall || p->pipe_latch[ID_LATCH][ii].stall;
-
   } // end pipe_width for loop
 }
 
