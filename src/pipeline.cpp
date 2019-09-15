@@ -124,10 +124,10 @@ void pipe_cycle(Pipeline *p)
     pipe_cycle_ID(p);
     pipe_cycle_IF(p);
     
-    // if(p->stat_num_cycle <= 200 && p->stat_num_cycle >= 100)
-    // {
-    //   pipe_print_state(p);
-    // }
+    if(p->stat_num_cycle <= 200)
+    {
+      pipe_print_state(p);
+    }
 
 }
 /**********************************************************************
@@ -136,6 +136,10 @@ void pipe_cycle(Pipeline *p)
 
 void insertion_sort(Pipeline *p){
   // implement insertion sort to sort the order between superscalars
+  if(p->stat_num_cycle <= 50){
+  // printf("%u", p->pipe_latch[IF_LATCH][0].valid);
+  // printf("%u", p->pipe_latch[IF_LATCH][1].valid);
+  }
   int i, j;
   for(int i = 1; i < PIPE_WIDTH; ++i){
     Pipeline_Latch temp = p->pipe_latch[IF_LATCH][i];
@@ -143,7 +147,7 @@ void insertion_sort(Pipeline *p){
     while
       ( j >= 0 
         && 
-        ( (p->pipe_latch[IF_LATCH][j].op_id > temp.op_id && p->pipe_latch[IF_LATCH][j].valid) \
+        ( ( (p->pipe_latch[IF_LATCH][j].op_id > temp.op_id) && temp.valid) \
           ||
           (!p->pipe_latch[IF_LATCH][j].valid && temp.valid)
         )
@@ -161,8 +165,12 @@ void pipe_cycle_WB(Pipeline *p){
   for(ii=0; ii<PIPE_WIDTH; ii++){
     if(p->pipe_latch[MA_LATCH][ii].valid){
       p->stat_retired_inst++;
-        if(p->pipe_latch[MA_LATCH][ii].op_id >= p->halt_op_id){
+      if(p->pipe_latch[MA_LATCH][ii].op_id >= p->halt_op_id){
 	        p->halt=true;
+
+      }
+      if(p->pipe_latch[MA_LATCH][ii].is_mispred_cbr){
+        p->fetch_cbr_stall = false; // pipeline resolved
       }
     }
   }
@@ -345,6 +353,10 @@ void pipe_cycle_ID(Pipeline *p){
       }
     }
 
+    if(p->fetch_cbr_stall && !p->pipe_latch[IF_LATCH][ii].valid){
+      p->pipe_latch[ID_LATCH][ii].stall = true;
+    }
+
     // If  stall, no longer valid to receive new instructions 
     if(p->pipe_latch[ID_LATCH][ii].stall){
       p->pipe_latch[ID_LATCH][ii].valid = false;
@@ -365,17 +377,37 @@ void pipe_cycle_IF(Pipeline *p){
   bool tr_read_success;
 
   for(ii=0; ii<PIPE_WIDTH; ii++){
-    if(!p->pipe_latch[ID_LATCH][ii].stall){
-    // If there is no stall in ID stage, fetch next op
+    // If older pipeline is mispred, newer pipeline is not valid
+    // If there is corresponding stall in ID stage, 
+    if(p->fetch_cbr_stall && !p->pipe_latch[ID_LATCH][ii].stall){
+      // p->pipe_latch[IF_LATCH][ii].stall = true;
+      p->pipe_latch[IF_LATCH][ii].valid = false;
+    }
+    else{
+      p->pipe_latch[IF_LATCH][ii].valid = true;
+    }
+
+    // If older pipeline is mispred, newer pipeline does not fetch
+    // If there is no stall or mispred, fetch new instruction
+    if(!p->pipe_latch[ID_LATCH][ii].stall && !p->fetch_cbr_stall){
       pipe_get_fetch_op(p, &fetch_op);
 
-      if(BPRED_POLICY){
+      // If it is branch, check predictor
+      if(BPRED_POLICY && fetch_op.tr_entry.op_type == OP_CBR){
         pipe_check_bpred(p, &fetch_op);
       }
-      
+  
       // copy the op in IF LATCH
       p->pipe_latch[IF_LATCH][ii] = fetch_op;
+      if(p->pipe_latch[IF_LATCH][ii].tr_entry.op_type == OP_CBR && p->stat_num_cycle <= 200 && \
+          p->pipe_latch[IF_LATCH][ii].is_mispred_cbr)
+      {
+          printf("b");
+          printf(" %u", ii);
+      }
     }
+
+
   }
   
 }
@@ -386,6 +418,15 @@ void pipe_check_bpred(Pipeline *p, Pipeline_Latch *fetch_op){
   // call branch predictor here, if mispred then mark in fetch_op
   // update the predictor instantly
   // stall fetch using the flag p->fetch_cbr_stall
+  bool predictResult = false;
+  predictResult = p->b_pred->GetPrediction(fetch_op->tr_entry.inst_addr); // call predictor
+  if(predictResult != fetch_op->tr_entry.br_dir) // if mispredict
+  {
+    p->b_pred->stat_num_mispred++;
+    p->fetch_cbr_stall = true;       // stall the fetch
+    fetch_op->is_mispred_cbr = true; // label the position of mispred branch
+  }
+  p->b_pred->stat_num_branches++; // increment the number of branches
 }
 
 //--------------------------------------------------------------------//

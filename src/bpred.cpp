@@ -7,15 +7,27 @@
 /////////////////////////////////////////////////////////////
 
 BPRED::BPRED(uint32_t policy) {
-
-  
+    if(policy == 1)
+    {
+        (*this).policy = BPRED_ALWAYS_TAKEN;
+    }
+    else if(policy == 2)
+    {
+        (*this).policy = BPRED_GSHARE;
+    }
 }
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 
 bool BPRED::GetPrediction(uint32_t PC){
-    return TAKEN;  
+    if(policy == BPRED_ALWAYS_TAKEN)
+        return TAKEN;
+    else
+    {
+        return NOTTAKEN;
+    }
+    
 }
 
 
