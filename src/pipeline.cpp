@@ -124,11 +124,10 @@ void pipe_cycle(Pipeline *p)
     pipe_cycle_ID(p);
     pipe_cycle_IF(p);
     
-    if(p->stat_num_cycle <= 200)
-    {
-      pipe_print_state(p);
-    }
-
+    // if(p->stat_num_cycle <= 1000)
+    // {
+    //   pipe_print_state(p);
+    // }
 }
 /**********************************************************************
  * -----------  DO NOT MODIFY THE CODE ABOVE THIS LINE ----------------
@@ -136,10 +135,6 @@ void pipe_cycle(Pipeline *p)
 
 void insertion_sort(Pipeline *p){
   // implement insertion sort to sort the order between superscalars
-  if(p->stat_num_cycle <= 50){
-  // printf("%u", p->pipe_latch[IF_LATCH][0].valid);
-  // printf("%u", p->pipe_latch[IF_LATCH][1].valid);
-  }
   int i, j;
   for(int i = 1; i < PIPE_WIDTH; ++i){
     Pipeline_Latch temp = p->pipe_latch[IF_LATCH][i];
@@ -147,7 +142,7 @@ void insertion_sort(Pipeline *p){
     while
       ( j >= 0 
         && 
-        ( ( (p->pipe_latch[IF_LATCH][j].op_id > temp.op_id) && temp.valid) \
+        ( (p->pipe_latch[IF_LATCH][j].op_id > temp.op_id && temp.valid) \
           ||
           (!p->pipe_latch[IF_LATCH][j].valid && temp.valid)
         )
@@ -160,14 +155,35 @@ void insertion_sort(Pipeline *p){
   }
 }
 
+// check RAW hazard when no forwarding
+bool checkRAW(Trace_Rec &oldInst, Trace_Rec &fetchInst)
+{
+  // If src1 or src2 match dest and src op is load instruction, stall the instruction
+  // Otherwise, forward the data so there is no stall 
+  return ((
+        (fetchInst.src1_needed && \
+        (fetchInst.src1_reg == oldInst.dest) )
+          ||
+        (fetchInst.src2_needed && \
+        (fetchInst.src2_reg == oldInst.dest))
+        )
+        &&
+      (oldInst.dest_needed));
+}
+
+// check status register when no forwarding
+bool checkCC(Trace_Rec &oldInst, Trace_Rec &fetchInst)
+{
+  return(oldInst.cc_write && fetchInst.cc_read);
+}
+
 void pipe_cycle_WB(Pipeline *p){
   int ii;
   for(ii=0; ii<PIPE_WIDTH; ii++){
     if(p->pipe_latch[MA_LATCH][ii].valid){
       p->stat_retired_inst++;
       if(p->pipe_latch[MA_LATCH][ii].op_id >= p->halt_op_id){
-	        p->halt=true;
-
+        p->halt=true;
       }
       if(p->pipe_latch[MA_LATCH][ii].is_mispred_cbr){
         p->fetch_cbr_stall = false; // pipeline resolved
@@ -210,6 +226,7 @@ void pipe_cycle_ID(Pipeline *p){
   for(ii=0; ii<PIPE_WIDTH; ii++){
     p->pipe_latch[ID_LATCH][ii].stall = false;
 
+    // If older pipeline is stall, then stall newer pipeline
     if(ii > 0){
       int j = ii - 1;
       while(j >= 0){
@@ -219,74 +236,52 @@ void pipe_cycle_ID(Pipeline *p){
         --j;
       }
     }
+
+    // Instruction going to be fetched
+    Trace_Rec fetchInst = p->pipe_latch[IF_LATCH][ii].tr_entry;
+
     // Check dependency in EX stage
-    if(ENABLE_EXE_FWD){
-      for(int cur = 0; cur < PIPE_WIDTH; cur++)
+    for(int cur = 0; cur < PIPE_WIDTH; cur++)
+    {
+      Trace_Rec oldInst = p->pipe_latch[EX_LATCH][cur].tr_entry;
+
+      if(ENABLE_EXE_FWD)
       {
         // RAW dependency
-        if(p->pipe_latch[EX_LATCH][cur].valid && p->pipe_latch[EX_LATCH][cur].tr_entry.dest_needed)
+        if(p->pipe_latch[EX_LATCH][cur].valid)
         {
-          // If src1 or src2 match dest and src op is load instruction, stall the instruction
-          // Otherwise, forward the data so there is no stall 
-          if(
-             (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed && \
-             p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[EX_LATCH][cur].tr_entry.dest && \
-             p->pipe_latch[EX_LATCH][cur].tr_entry.op_type == OP_LD) 
-             || 
-             (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && \
-             p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed == p->pipe_latch[EX_LATCH][cur].tr_entry.dest && \
-             p->pipe_latch[EX_LATCH][cur].tr_entry.op_type == OP_LD)
-            )
+          if(!p->pipe_latch[ID_LATCH][ii].stall && checkRAW(oldInst, fetchInst) && oldInst.op_type == OP_LD)
           {
             p->pipe_latch[ID_LATCH][ii].stall = true;
           }
         }
 
         // check cc_read and cc_write
-        if(p->pipe_latch[IF_LATCH][ii].tr_entry.cc_read)
+        if(fetchInst.cc_read)
         {
-          if(p->pipe_latch[EX_LATCH][cur].valid && p->pipe_latch[EX_LATCH][cur].tr_entry.cc_write){
-            if(p->pipe_latch[EX_LATCH][cur].tr_entry.op_type == OP_LD)
-            {
-              p->pipe_latch[ID_LATCH][ii].stall = true;  
-            }
-            else
-            {
-              p->pipe_latch[ID_LATCH][ii].stall = false;
-            }
+          if(p->pipe_latch[EX_LATCH][cur].valid && checkCC(oldInst, fetchInst)){
+              p->pipe_latch[ID_LATCH][ii].stall = (oldInst.op_type == OP_LD)? true : false;  
           }
         }
       }
-    }
-    else
-    {
-      for(int cur = 0; cur < PIPE_WIDTH; cur++)
+      else
       {
-        // RAW dependency
-        if(p->pipe_latch[EX_LATCH][cur].valid && p->pipe_latch[EX_LATCH][cur].tr_entry.dest_needed)
+        if(p->pipe_latch[EX_LATCH][cur].valid)
         { 
-          if(
-              (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed && \
-              (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[EX_LATCH][cur].tr_entry.dest) )
-              ||
-              (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && \
-              (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[EX_LATCH][cur].tr_entry.dest) )
-            )
+          // RAW dependency
+          if(!p->pipe_latch[ID_LATCH][ii].stall)
           {
-            p->pipe_latch[ID_LATCH][ii].stall = true;
+            p->pipe_latch[ID_LATCH][ii].stall = checkRAW(oldInst, fetchInst);
           }
-        }
 
-        // check cc_read and cc_write dependency, only branch will have cc_read
-        if(p->pipe_latch[EX_LATCH][cur].valid && p->pipe_latch[EX_LATCH][cur].tr_entry.cc_write)
-        {
-          if(p->pipe_latch[IF_LATCH][ii].tr_entry.cc_read)
+          // check cc_read and cc_write dependency, only branch will have cc_read
+          if(!p->pipe_latch[ID_LATCH][ii].stall)
           {
-            p->pipe_latch[ID_LATCH][ii].stall = true;
+            p->pipe_latch[ID_LATCH][ii].stall = checkCC(oldInst, fetchInst);
           }
         }
-      }
-    } // end ENABLE_EXE_FWD statement
+      } // end ENABLE_EXE_FWD statement
+    }
 
     if(ENABLE_MEM_FWD){
       // todo
@@ -297,26 +292,19 @@ void pipe_cycle_ID(Pipeline *p){
       // Check dependence for super-scalar pipeline
       for(int cur = 0; cur < PIPE_WIDTH; cur++)
       {
-        // For in-order pipeline, consider only RAW hazard
-        if(p->pipe_latch[MA_LATCH][cur].valid && p->pipe_latch[MA_LATCH][cur].tr_entry.dest_needed)
+        Trace_Rec oldInst = p->pipe_latch[MA_LATCH][cur].tr_entry;
+
+        if(p->pipe_latch[MA_LATCH][cur].valid)
         {
-          if(
-              (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed &&
-              (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[MA_LATCH][cur].tr_entry.dest) )
-              ||
-              (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && 
-              (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[MA_LATCH][cur].tr_entry.dest) )
-            )
+          // RAW hazard
+          if(!p->pipe_latch[ID_LATCH][ii].stall)
           {
-            p->pipe_latch[ID_LATCH][ii].stall = true;
+            p->pipe_latch[ID_LATCH][ii].stall = checkRAW(oldInst, fetchInst);
           }
-        }
-        // check cc_read and cc_write dependency, only branch will have cc_read
-        if(p->pipe_latch[MA_LATCH][cur].valid && p->pipe_latch[MA_LATCH][cur].tr_entry.cc_write)
-        {
-          if(p->pipe_latch[IF_LATCH][ii].tr_entry.cc_read)
+          // check cc_read and cc_write dependency, only branch will have cc_read
+          if(!p->pipe_latch[ID_LATCH][ii].stall)
           {
-            p->pipe_latch[ID_LATCH][ii].stall = true;
+            p->pipe_latch[ID_LATCH][ii].stall = checkCC(oldInst, fetchInst);
           }
         }
       }
@@ -327,33 +315,24 @@ void pipe_cycle_ID(Pipeline *p){
     // pipeline with smaller ii index is older due to the fetch order in IF stage
     for(int old = 0; old < ii; old++)
     {
-      if(p->pipe_latch[ID_LATCH][old].valid && p->pipe_latch[ID_LATCH][old].tr_entry.dest_needed)
-      {
-        if(
-            (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_needed && \
-            (p->pipe_latch[IF_LATCH][ii].tr_entry.src1_reg == p->pipe_latch[ID_LATCH][old].tr_entry.dest) )
-            ||
-            (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_needed && \
-            (p->pipe_latch[IF_LATCH][ii].tr_entry.src2_reg == p->pipe_latch[ID_LATCH][old].tr_entry.dest) )
-          )
-        {
-          // stall newer pipe
-          p->pipe_latch[ID_LATCH][ii].stall = true;
-        }
-      }
+      Trace_Rec oldInst = p->pipe_latch[ID_LATCH][old].tr_entry;
 
-      // If older instructions have cc_write
-      if(p->pipe_latch[ID_LATCH][old].valid && p->pipe_latch[ID_LATCH][old].tr_entry.cc_write)
+      if(p->pipe_latch[ID_LATCH][old].valid)
       {
-        // If newer instruction has cc_read
-        if(p->pipe_latch[IF_LATCH][ii].tr_entry.cc_read)
+        // check RAW dependency between pipes
+        if(!p->pipe_latch[ID_LATCH][ii].stall)
         {
-          p->pipe_latch[ID_LATCH][ii].stall = true;
+          p->pipe_latch[ID_LATCH][ii].stall = checkRAW(oldInst, fetchInst);
+        }
+        // check status register dependency between pipes
+        if(!p->pipe_latch[ID_LATCH][ii].stall)
+        {
+          p->pipe_latch[ID_LATCH][ii].stall = checkCC(oldInst, fetchInst);
         }
       }
     }
 
-    if(p->fetch_cbr_stall && !p->pipe_latch[IF_LATCH][ii].valid){
+    if(p->fetch_cbr_stall && !p->pipe_latch[IF_LATCH][ii].valid && p->pipe_latch[ID_LATCH][ii].is_mispred_cbr != 1){
       p->pipe_latch[ID_LATCH][ii].stall = true;
     }
 
@@ -379,9 +358,17 @@ void pipe_cycle_IF(Pipeline *p){
   for(ii=0; ii<PIPE_WIDTH; ii++){
     // If older pipeline is mispred, newer pipeline is not valid
     // If there is corresponding stall in ID stage, 
-    if(p->fetch_cbr_stall && !p->pipe_latch[ID_LATCH][ii].stall){
-      // p->pipe_latch[IF_LATCH][ii].stall = true;
-      p->pipe_latch[IF_LATCH][ii].valid = false;
+    if(p->fetch_cbr_stall){
+      // ID_Latch stall before instruction goes fetch stage
+      // 
+      if(p->pipe_latch[IF_LATCH][ii].valid && p->pipe_latch[ID_LATCH][ii].stall)
+      {
+        p->pipe_latch[IF_LATCH][ii].valid = true;
+      }
+      else
+      {
+        p->pipe_latch[IF_LATCH][ii].valid = false;
+      }
     }
     else{
       p->pipe_latch[IF_LATCH][ii].valid = true;
@@ -399,15 +386,13 @@ void pipe_cycle_IF(Pipeline *p){
   
       // copy the op in IF LATCH
       p->pipe_latch[IF_LATCH][ii] = fetch_op;
-      if(p->pipe_latch[IF_LATCH][ii].tr_entry.op_type == OP_CBR && p->stat_num_cycle <= 200 && \
-          p->pipe_latch[IF_LATCH][ii].is_mispred_cbr)
-      {
-          printf("b");
-          printf(" %u", ii);
-      }
+      // if(p->pipe_latch[IF_LATCH][ii].tr_entry.op_type == OP_CBR && p->stat_num_cycle <= 200 && \
+      //     p->pipe_latch[IF_LATCH][ii].is_mispred_cbr)
+      // {
+      //     printf("b");
+      //     printf(" %u", ii);
+      // }
     }
-
-
   }
   
 }
@@ -419,7 +404,8 @@ void pipe_check_bpred(Pipeline *p, Pipeline_Latch *fetch_op){
   // update the predictor instantly
   // stall fetch using the flag p->fetch_cbr_stall
   bool predictResult = false;
-  predictResult = p->b_pred->GetPrediction(fetch_op->tr_entry.inst_addr); // call predictor
+  predictResult = p->b_pred->GetPrediction(static_cast<uint32_t>(fetch_op->tr_entry.inst_addr)); // call predictor
+  p->b_pred->UpdatePredictor(static_cast<uint32_t>(fetch_op->tr_entry.inst_addr), fetch_op->tr_entry.br_dir, predictResult);
   if(predictResult != fetch_op->tr_entry.br_dir) // if mispredict
   {
     p->b_pred->stat_num_mispred++;

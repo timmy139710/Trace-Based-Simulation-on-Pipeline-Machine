@@ -3,3 +3,13 @@ ref/
 results/
 *.gz
 *.txt
+*.o
+sim
+src_A/
+tode/
+*.log
+newsrc/
+other/
+scripts/*A.sh
+.DS_Store
+src/.DS_Store

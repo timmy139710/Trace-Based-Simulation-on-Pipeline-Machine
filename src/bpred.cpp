@@ -15,6 +15,9 @@ BPRED::BPRED(uint32_t policy) {
     {
         (*this).policy = BPRED_GSHARE;
     }
+    stat_num_branches = 0;
+    stat_num_mispred = 0;
+    
 }
 
 /////////////////////////////////////////////////////////////
@@ -23,11 +26,10 @@ BPRED::BPRED(uint32_t policy) {
 bool BPRED::GetPrediction(uint32_t PC){
     if(policy == BPRED_ALWAYS_TAKEN)
         return TAKEN;
-    else
+    else if(policy == BPRED_GSHARE)
     {
         return NOTTAKEN;
     }
-    
 }
 
 
@@ -35,7 +37,7 @@ bool BPRED::GetPrediction(uint32_t PC){
 /////////////////////////////////////////////////////////////
 
 void  BPRED::UpdatePredictor(uint32_t PC, bool resolveDir, bool predDir) {
-
+    // stat_num_mispred = (resolveDir == predDir)? stat_num_mispred : stat_num_mispred + 1; 
 
 }
 
