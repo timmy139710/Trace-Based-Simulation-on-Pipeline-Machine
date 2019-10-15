@@ -9,5 +9,5 @@ ECE 6100, Fall 2019, Georgia Tech
 
 1. Lab2: Dependency Tracking and Forwarding for 5-stage Superscalar Pipeline with Branch Prediction  
 https://github.com/timmy139710/Trace-Based-Simulation-on-Pipeline-Machine/tree/master/lab2
-2. Lab3: Out of Order Pipeline with In Order Commit, Tomasulo Algorithm
+2. Lab3: Out of Order Pipeline with In Order Commit, Tomasulo Algorithm  
   (To be updated)
