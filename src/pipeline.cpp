@@ -331,8 +331,9 @@ void pipe_cycle_ID(Pipeline *p){
         }
       }
     }
-
-    if(p->fetch_cbr_stall && !p->pipe_latch[IF_LATCH][ii].valid && p->pipe_latch[ID_LATCH][ii].is_mispred_cbr != 1){
+    
+    // If there is misprediction and IF latch does not contains validinstruction, stall ID latch
+    if(p->fetch_cbr_stall && !p->pipe_latch[IF_LATCH][ii].valid){
       p->pipe_latch[ID_LATCH][ii].stall = true;
     }
 
@@ -358,9 +359,10 @@ void pipe_cycle_IF(Pipeline *p){
   for(ii=0; ii<PIPE_WIDTH; ii++){
     // If older pipeline is mispred, newer pipeline is not valid
     // If there is corresponding stall in ID stage, 
-    if(p->fetch_cbr_stall){
-      // ID_Latch stall before instruction goes fetch stage
-      // 
+    if(p->fetch_cbr_stall)
+    {
+      // However, if newer pipeline has a stall in ID stage
+      // Means that currently fetch latch still has valid instruction that hasn't been passed to ID stage
       if(p->pipe_latch[IF_LATCH][ii].valid && p->pipe_latch[ID_LATCH][ii].stall)
       {
         p->pipe_latch[IF_LATCH][ii].valid = true;
@@ -370,17 +372,20 @@ void pipe_cycle_IF(Pipeline *p){
         p->pipe_latch[IF_LATCH][ii].valid = false;
       }
     }
-    else{
+    else
+    {
       p->pipe_latch[IF_LATCH][ii].valid = true;
     }
 
     // If older pipeline is mispred, newer pipeline does not fetch
     // If there is no stall or mispred, fetch new instruction
-    if(!p->pipe_latch[ID_LATCH][ii].stall && !p->fetch_cbr_stall){
+    if(!p->pipe_latch[ID_LATCH][ii].stall && !p->fetch_cbr_stall)
+    {
       pipe_get_fetch_op(p, &fetch_op);
 
       // If it is branch, check predictor
-      if(BPRED_POLICY && fetch_op.tr_entry.op_type == OP_CBR){
+      if(BPRED_POLICY && fetch_op.tr_entry.op_type == OP_CBR)
+      {
         pipe_check_bpred(p, &fetch_op);
       }
   
@@ -404,8 +409,8 @@ void pipe_check_bpred(Pipeline *p, Pipeline_Latch *fetch_op){
   // update the predictor instantly
   // stall fetch using the flag p->fetch_cbr_stall
   bool predictResult = false;
-  predictResult = p->b_pred->GetPrediction(static_cast<uint32_t>(fetch_op->tr_entry.inst_addr)); // call predictor
-  p->b_pred->UpdatePredictor(static_cast<uint32_t>(fetch_op->tr_entry.inst_addr), fetch_op->tr_entry.br_dir, predictResult);
+  predictResult = p->b_pred->GetPrediction(fetch_op->tr_entry.inst_addr); // call predictor
+  p->b_pred->UpdatePredictor(fetch_op->tr_entry.inst_addr, fetch_op->tr_entry.br_dir, predictResult);
   if(predictResult != fetch_op->tr_entry.br_dir) // if mispredict
   {
     p->b_pred->stat_num_mispred++;

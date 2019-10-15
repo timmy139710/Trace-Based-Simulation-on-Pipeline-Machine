@@ -1,8 +1,9 @@
 #ifndef _BPRED_H_
 #define _BPRED_H_
 #include <inttypes.h>
+#include <vector>
 
-
+using namespace std;
 
 static inline uint32_t SatIncrement(uint32_t x, uint32_t max)
 {
@@ -29,11 +30,14 @@ typedef enum BPRED_TYPE_ENUM {
 /////////////////////////////////////////////////////////////
 
 class BPRED{
-  BPRED_TYPE policy;
-
+private:
+    BPRED_TYPE policy;
+    std::vector<uint32_t> pht;
+    int ghr;
+    int pht_index;
 public:
-  uint64_t stat_num_branches;
-  uint64_t stat_num_mispred;
+    uint64_t stat_num_branches;
+    uint64_t stat_num_mispred;
   
 // The interface to the three functions below CAN NOT be changed
     BPRED(uint32_t policy);

@@ -1,4 +1,3 @@
-traces/
 ref/
 results/
 *.gz
@@ -13,3 +12,4 @@ other/
 scripts/*A.sh
 .DS_Store
 src/.DS_Store
+*.vscode
